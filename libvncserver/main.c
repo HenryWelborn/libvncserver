@@ -642,6 +642,8 @@ listenerRun(void *data)
 	  FD_SET(screen->listenSock, &listen_fds);
 	if(screen->listen6Sock != RFB_INVALID_SOCKET)
 	  FD_SET(screen->listen6Sock, &listen_fds);
+	if(screen->unixSock != RFB_INVALID_SOCKET)
+	  FD_SET(screen->unixSock, &listen_fds);
 #ifndef WIN32
 	FD_SET(screen->pipe_notify_listener_thread[0], &listen_fds);
 	screen->maxFd = rfbMax(screen->maxFd, screen->pipe_notify_listener_thread[0]);
@@ -669,6 +671,8 @@ listenerRun(void *data)
 	    client_fd = accept(screen->listenSock, (struct sockaddr*)&peer, &len);
 	else if (FD_ISSET(screen->listen6Sock, &listen_fds))
 	    client_fd = accept(screen->listen6Sock, (struct sockaddr*)&peer, &len);
+	else if (FD_ISSET(screen->unixSock, &listen_fds))
+	    client_fd = accept(screen->unixSock, (struct sockaddr*)&peer, &len);
 
 	if(client_fd >= 0)
 	  cl = rfbNewClient(screen,client_fd);

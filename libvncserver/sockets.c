@@ -999,7 +999,7 @@ rfbListenOnUnixSock(const char *sockFile)
         return RFB_INVALID_SOCKET;
     }
 
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr.sun_family) + strlen(addr.sun_path)) < 0) {
         rfbLogPerror("rfbListenOnUnixSock: bind\n");
 	    rfbCloseSocket(sock);
 	    return RFB_INVALID_SOCKET;
