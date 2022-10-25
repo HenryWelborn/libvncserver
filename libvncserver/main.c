@@ -947,6 +947,9 @@ rfbScreenInfoPtr rfbGetScreen(int* argc,char** argv,
    screen->udpPort=0;
    screen->udpClient=NULL;
 
+   screen->unixSock = RFB_INVALID_SOCKET;
+   screen->unixSockPath = NULL;
+
    screen->maxFd=0;
    screen->listenSock=RFB_INVALID_SOCKET;
    screen->listen6Sock=RFB_INVALID_SOCKET;

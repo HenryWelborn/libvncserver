@@ -249,6 +249,9 @@ typedef struct _rfbScreenInfo
     rfbBool udpSockConnected;
     struct sockaddr_in udpRemoteAddr;
 
+	rfbSocket unixSock;
+    const char* unixSockPath;
+
     int maxClientWait;
 
     /* http stuff */
@@ -765,6 +768,7 @@ extern int rfbCheckFds(rfbScreenInfoPtr rfbScreen,long usec);
 extern rfbSocket rfbConnect(rfbScreenInfoPtr rfbScreen, char* host, int port);
 extern rfbSocket rfbConnectToTcpAddr(char* host, int port);
 extern rfbSocket rfbListenOnTCPPort(int port, in_addr_t iface);
+extern rfbSocket rfbListenOnUnixSock(const char *sockFile);
 extern rfbSocket rfbListenOnTCP6Port(int port, const char* iface);
 extern rfbSocket rfbListenOnUDPPort(int port, in_addr_t iface);
 extern int rfbStringToAddr(char* string,in_addr_t* addr);

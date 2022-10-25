@@ -151,7 +151,7 @@ rfbNewConnectionFromSock(rfbScreenInfoPtr rfbScreen, rfbSocket sock)
 }
 
 /*
- * rfbInitSockets sets up the TCP and UDP sockets to listen for RFB
+ * rfbInitSockets sets up the UNIX, TCP and UDP sockets to listen for RFB
  * connections.  It does nothing if called again.
  */
 
@@ -292,6 +292,19 @@ rfbInitSockets(rfbScreenInfoPtr rfbScreen)
 	FD_SET(rfbScreen->udpSock, &(rfbScreen->allFds));
 	rfbScreen->maxFd = rfbMax((int)rfbScreen->udpSock,rfbScreen->maxFd);
     }
+
+    if (rfbScreen->unixSockPath != NULL) {
+        rfbLog("rfbInitSockets: listening for input on UNIX sock %s\n",rfbScreen->unixSockPath);
+
+        if ((rfbScreen->unixSock = rfbListenOnUnixSock(rfbScreen->unixSockPath)) == RFB_INVALID_SOCKET) {
+            rfbLogPerror("rfbListenOnUnixSock");
+	        return;
+        }
+    rfbLog("Listening for VNC connections on UNIX Socket %s\n", rfbScreen->unixSockPath);
+    FD_SET(rfbScreen->unixSock, &(rfbScreen->allFds));
+    rfbScreen->maxFd = rfbMax((int)rfbScreen->unixSock,rfbScreen->maxFd);
+    }
+
 }
 
 void rfbShutdownSockets(rfbScreenInfoPtr rfbScreen)
@@ -324,6 +337,14 @@ void rfbShutdownSockets(rfbScreenInfoPtr rfbScreen)
 	rfbCloseSocket(rfbScreen->udpSock);
 	rfbScreen->udpSock=RFB_INVALID_SOCKET;
     }
+
+    if(rfbScreen->unixSock!=RFB_INVALID_SOCKET) {
+	FD_CLR(rfbScreen->unixSock,&rfbScreen->allFds);
+	rfbCloseSocket(rfbScreen->unixSock);
+    unlink(rfbScreen->unixSockPath);
+	rfbScreen->unixSock=RFB_INVALID_SOCKET;
+    }
+    
 
 #ifdef WIN32
     if(WSACleanup() != 0) {
@@ -442,6 +463,14 @@ rfbCheckFds(rfbScreenInfoPtr rfbScreen,long usec)
 	    if (--nfds == 0)
 		return result;
 	}
+    if (rfbScreen->unixSock != RFB_INVALID_SOCKET && FD_ISSET(rfbScreen->unixSock, &fds)) {
+        if (!rfbProcessNewConnection(rfbScreen))
+                return -1;
+
+        FD_CLR(rfbScreen->unixSock, &fds);
+        if (--nfds == 0)
+        return result;
+    }
 
 	i = rfbGetClientIterator(rfbScreen);
 	while((cl = rfbClientIteratorNext(i))) {
@@ -487,7 +516,9 @@ rfbProcessNewConnection(rfbScreenInfoPtr rfbScreen)
     if(rfbScreen->listenSock != RFB_INVALID_SOCKET)
       FD_SET(rfbScreen->listenSock, &listen_fds);
     if(rfbScreen->listen6Sock != RFB_INVALID_SOCKET)
-      FD_SET(rfbScreen->listen6Sock, &listen_fds);
+      FD_SET(rfbScreen->listen6Sock, &listen_fds); 
+    if(rfbScreen->unixSock != RFB_INVALID_SOCKET)
+	    FD_SET(rfbScreen->unixSock, &listen_fds);    
     if (select(rfbScreen->maxFd+1, &listen_fds, NULL, NULL, NULL) == -1) {
       rfbLogPerror("rfbProcessNewConnection: error in select");
       return FALSE;
@@ -496,7 +527,8 @@ rfbProcessNewConnection(rfbScreenInfoPtr rfbScreen)
       chosen_listen_sock = rfbScreen->listenSock;
     if (rfbScreen->listen6Sock != RFB_INVALID_SOCKET && FD_ISSET(rfbScreen->listen6Sock, &listen_fds))
       chosen_listen_sock = rfbScreen->listen6Sock;
-
+	 if (rfbScreen->unixSock != RFB_INVALID_SOCKET && FD_ISSET(rfbScreen->unixSock, &listen_fds))
+		chosen_listen_sock = rfbScreen->unixSock;
 
     /*
       Avoid accept() giving EMFILE, i.e. running out of file descriptors, a situation that's hard to recover from.
@@ -626,7 +658,7 @@ rfbConnect(rfbScreenInfoPtr rfbScreen,
 	return RFB_INVALID_SOCKET;
     }
 
-    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+    if (sock != rfbScreen->unixSock && setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
 		   (const char *)&one, sizeof(one)) < 0) {
 	rfbLogPerror("setsockopt failed: can't set TCP_NODELAY flag, non TCP socket?");
     }
@@ -940,6 +972,45 @@ rfbStringToAddr(char *str, in_addr_t *addr)  {
         }
     }
     return 1;
+}
+
+rfbSocket
+rfbListenOnUnixSock(const char *sockFile)
+{
+#ifdef WIN32
+  rfbLogPerror("Windows doesn't support UNIX sockets\n");
+  return RFB_INVALID_SOCKET;
+#else
+    struct sockaddr_un addr;
+    rfbSocket sock;
+    int one = 1;
+
+    addr.sun_family = AF_UNIX;
+    if(strlen(sockFile) + 1 > sizeof(addr.sun_path)) {
+      rfbLogPerror("rfbListenOnUnixSock: socket file name too long\n");
+      return RFB_INVALID_SOCKET;
+    }
+
+    strcpy(addr.sun_path, sockFile);
+
+    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock == RFB_INVALID_SOCKET) {
+        rfbLogPerror("rfbListenOnUnixSock: socket creation error\n");
+        return RFB_INVALID_SOCKET;
+    }
+
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        rfbLogPerror("rfbListenOnUnixSock: bind\n");
+	    rfbCloseSocket(sock);
+	    return RFB_INVALID_SOCKET;
+    }
+    if (listen(sock, 32) < 0) {
+	    rfbCloseSocket(sock);
+	    return RFB_INVALID_SOCKET;
+    }
+
+    return sock;
+#endif
 }
 
 rfbSocket
